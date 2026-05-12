@@ -57,3 +57,28 @@ def plot_images(X, y, indices = [0, 1, 2]):
     plt.suptitle("Dataset image examples\n", fontsize=15)
     plt.tight_layout()
     plt.show()
+
+
+def plot_loss_history(history):
+    """
+    Plots the evolution of the cross-entropy loss during training.
+
+    Arguments:
+        history (dict): Dictionary containing training and validation loss history.
+
+    Returns:
+        None
+    """
+    plt.figure(figsize = (8, 4))
+
+    plt.plot(history["train_loss"], label = "Training loss", color = "#082450")
+
+    if "val_loss" in history and len(history["val_loss"]) > 0:
+        plt.plot(history["val_loss"], label = "Validation loss", color = "#AA1D22")
+
+    plt.title("Cross-entropy loss during training")
+    plt.xlabel("Epoch")
+    plt.ylabel("Cross-entropy")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
