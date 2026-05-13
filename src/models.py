@@ -17,18 +17,24 @@ class MLP:
         self.learning_rate = learning_rate
         self.random_state = seed
 
-        # Advanced features
+        # ================== Advanced atributes ==================
         self.optimizer = optimizer
+        
+        # --------------- Learning rate scheduling ---------------
         self.lr_schedule = lr_schedule
         self.lr_min = lr_min
         self.lr_decay = lr_decay
+        
+        # ---------- Regularization (L2/Early Stopping) ----------
         self.l2_lambda = l2_lambda
         self.early_stopping = early_stopping
         self.patience = patience
         self.min_delta = min_delta
+        
+        # ------------------------- Adam -------------------------
         self.beta1 = beta1
         self.beta2 = beta2
-        self.epsilon = epsilon
+        self.epsilon = epsilon 
         self.adam_m = None
         self.adam_v = None
         self.adam_t = 0
@@ -62,6 +68,7 @@ class MLP:
             dim_in = self.hidden_nodes[layer - 2]
             dim_out = self.hidden_nodes[layer - 1]
 
+            # loc = 0.0 is the mean of the normal distribution, scale = sqrt(2 / dim_in) is the standard deviation
             parameters[f"W{layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out))
             parameters[f"b{layer}"] = np.zeros((1, dim_out))
 
@@ -267,26 +274,6 @@ class MLP:
 
         return gradients
     
-    def _initialize_adam(self):
-        """
-        Initializes Adam first and second moment estimates.
-
-        Arguments:
-            None
-
-        Returns:
-            None
-        """
-        self.adam_m = {}
-        self.adam_v = {}
-        n_layers = len(self.hidden_nodes) + 1
-
-        for layer in range(1, n_layers + 1):
-            self.adam_m[f"dW{layer}"] = np.zeros_like(self.parameters[f"W{layer}"])
-            self.adam_m[f"db{layer}"] = np.zeros_like(self.parameters[f"b{layer}"])
-            self.adam_v[f"dW{layer}"] = np.zeros_like(self.parameters[f"W{layer}"])
-            self.adam_v[f"db{layer}"] = np.zeros_like(self.parameters[f"b{layer}"])
-
     def foward_pass(self, X):
         """
         Performs forward propagation through the network.
@@ -346,14 +333,17 @@ class MLP:
       Z_L = activations[f"Z{n_layers}"]
       dA = (Z_L - y_one_hot) / n_samples # The error signal for the output layer is the difference between 
                                           # predicted probabilities and one-hot labels
+      
       for layer in range(n_layers, 0, -1):
           Z_prev = activations[f"Z{layer - 1}"]
           W = self.parameters[f"W{layer}"]
 
+          # Compute gradients
           gradients[f"dW{layer}"] = Z_prev.T @ dA
           gradients[f"db{layer}"] = np.sum(dA, axis = 0, keepdims = True)
 
-          if layer > 1:
+          # Compute error signal for the previous layer
+          if layer > 1: # No need to compute dA for the input layer
               dZ_prev = dA @ W.T
               A_prev = pre_activations[f"A{layer - 1}"]
               dA = dZ_prev * self._relu_derivate(A_prev)
@@ -376,6 +366,20 @@ class MLP:
         for layer in range(1, n_layers + 1):
             self.parameters[f"W{layer}"] -= learning_rate * gradients[f"dW{layer}"]
             self.parameters[f"b{layer}"] -= learning_rate * gradients[f"db{layer}"]
+    
+    def _initialize_adam(self):
+        """
+        Initializes Adam first and second moment estimates.
+        """
+        self.adam_m = {}
+        self.adam_v = {}
+        n_layers = len(self.hidden_nodes) + 1
+
+        for layer in range(1, n_layers + 1):
+            self.adam_m[f"dW{layer}"] = np.zeros_like(self.parameters[f"W{layer}"])
+            self.adam_m[f"db{layer}"] = np.zeros_like(self.parameters[f"b{layer}"])
+            self.adam_v[f"dW{layer}"] = np.zeros_like(self.parameters[f"W{layer}"])
+            self.adam_v[f"db{layer}"] = np.zeros_like(self.parameters[f"b{layer}"])
     
     def _update_parameters_adam(self, gradients, learning_rate):
         """
@@ -582,19 +586,24 @@ class MLP:
         epochs_without_improvement = 0
 
         for epoch in range(epochs):
+            # Compute learning rate for currente epoch
             learning_rate = self._get_learning_rate(epoch, epochs)
             train_loss, n_updates, n_batches = self._train_epoch(X, y, batch_size, learning_rate)
 
+            # Update history
             history["train_loss"].append(train_loss)
             history["learning_rate"].append(learning_rate)
             history["epochs_trained"] = epoch + 1
             history["updates"] += n_updates
             history["batches_per_epoch"].append(n_batches)
 
+            # Validate on validation set if provided
             if X_val is not None and y_val is not None:
+                # Compute validation loss and update history
                 val_loss = self._validate(X_val, y_val)
                 history["val_loss"].append(val_loss)
 
+                # Check for early stopping
                 if self.early_stopping:
                     should_stop, best_val_loss, epochs_without_improvement, improved = self._check_early_stopping(
                         val_loss, best_val_loss, epochs_without_improvement)

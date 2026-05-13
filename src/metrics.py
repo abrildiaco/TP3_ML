@@ -51,6 +51,7 @@ def confusion_matrix(y_true, y_pred, n_classes):
     matrix = np.zeros((n_classes, n_classes), dtype = int)
 
     for true_label, pred_label in zip(y_true.astype(int), y_pred.astype(int)):
+        # Increment the count for the corresponding true and predicted class
         matrix[true_label, pred_label] += 1
 
     return matrix
@@ -71,13 +72,13 @@ def f1_score_macro(y_true, y_pred, n_classes):
     matrix = confusion_matrix(y_true, y_pred, n_classes)
 
     true_positives = np.diag(matrix)
-    false_positives = np.sum(matrix, axis = 0) - true_positives
-    false_negatives = np.sum(matrix, axis = 1) - true_positives
+    false_positives = np.sum(matrix, axis = 0) - true_positives # Sum over columns minus true positives
+    false_negatives = np.sum(matrix, axis = 1) - true_positives # Sum over rows minus true positives
 
     precision = true_positives / np.maximum(true_positives + false_positives, 1)
     recall = true_positives / np.maximum(true_positives + false_negatives, 1)
 
-    f1_scores = 2 * precision * recall / np.maximum(precision + recall, 1e-12)
+    f1_scores = 2 * precision * recall / np.maximum(precision + recall, 1e-12) # Avoid division by zero
     mean_f1 = np.mean(f1_scores)
 
     return mean_f1
