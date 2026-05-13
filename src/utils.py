@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from metrics import evaluate_model
+from src.metrics import evaluate_model
 
 def dataset_summary(X, y, max_sample = 10000, random_state = 42):
     """
@@ -84,7 +84,7 @@ def train_and_evaluate_model(model, X_train, y_train, X_val, y_val, n_classes, e
         y_val = y_val,
         epochs = epochs,
         batch_size = batch_size,
-        verbose = True
+        verbose = False
     )
 
     train_metrics = evaluate_model(model, X_train, y_train, n_classes)
@@ -104,29 +104,47 @@ def train_and_evaluate_model(model, X_train, y_train, X_val, y_val, n_classes, e
 
 def advanced_comparison_table(results_dict):
     """
-    Creates a comparison table for advanced training strategies.
+    Displays a styled comparison table for advanced training strategies.
 
     Arguments:
         results_dict (dict): Dictionary containing model results.
 
     Returns:
-        table (pd.DataFrame): Performance and training cost comparison table.
+        None
     """
+
     rows = []
 
     for model_name, results in results_dict.items():
         row = {
             "Model": model_name,
-            "Epochs trained": results["epochs_trained"],
-            "Parameter updates": results["updates"],
-            "Train accuracy": results["train_metrics"]["accuracy"],
-            "Validation accuracy": results["val_metrics"]["accuracy"],
-            "Train cross-entropy": results["train_metrics"]["cross_entropy"],
-            "Validation cross-entropy": results["val_metrics"]["cross_entropy"],
-            "Train F1 macro": results["train_metrics"]["f1_macro"],
-            "Validation F1 macro": results["val_metrics"]["f1_macro"]
+            "Epochs": results["epochs_trained"],
+            "Updates": results["updates"],
+            "Train Accuracy.": results["train_metrics"]["accuracy"],
+            "Val. Accuracy.": results["val_metrics"]["accuracy"],
+            "Train Cross-Entropy": results["train_metrics"]["cross_entropy"],
+            "Val. Cross-Entropy": results["val_metrics"]["cross_entropy"],
+            "Train F1": results["train_metrics"]["f1_macro"],
+            "Val. F1": results["val_metrics"]["f1_macro"]
         }
 
         rows.append(row)
 
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+
+    styled_table = table.style \
+        .hide(axis = "index") \
+        .format({
+            "Train Accuracy.": "{:.2f}",
+            "Val. Accuracy.": "{:.2f}",
+            "Train Cross-Entropy": "{:.2f}",
+            "Val. Cross-Entropy": "{:.2f}",
+            "Train F1": "{:.2f}",
+            "Val. F1": "{:.2f}"
+        }) \
+        .set_table_styles([
+            {"selector": "th", "props": [("text-align", "center")]},
+            {"selector": "td", "props": [("text-align", "center")]}
+        ])
+
+    display(styled_table)

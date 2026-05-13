@@ -142,4 +142,4 @@ def performance_report_table(train_results, val_results):
         ]
     )
 
-    return report
+    display(report)

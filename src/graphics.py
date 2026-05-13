@@ -84,25 +84,45 @@ def plot_loss_history(history):
     plt.show()
 
 
-def plot_confusion_matrix(matrix, title = "Confusion matrix", normalize = False):
+def plot_confusion_matrix(matrices, titles = None, normalize = False):
     """
-    Plots a confusion matrix.
+    Plots one or more confusion matrices side by side.
 
     Arguments:
-        matrix (np.ndarray): Confusion matrix.
-        title (str): Plot title.
+        matrices (np.ndarray or list): Confusion matrix or list of confusion matrices.
+        titles (str or list): Title or list of titles for each confusion matrix.
         normalize (bool): Whether to normalize values by true class counts.
 
     Returns:
         None
     """
-    matrix_to_plot = matrix.astype(float)
+    if not isinstance(matrices, list):
+        matrices = [matrices]
 
-    plt.figure(figsize = (8, 7))
-    plt.imshow(matrix_to_plot, cmap = "Blues", aspect = "auto")
-    plt.title(title)
-    plt.xlabel("Predicted class")
-    plt.ylabel("True class")
-    plt.colorbar()
+    if titles is None:
+        titles = ["Confusion matrix"] * len(matrices)
+
+    if isinstance(titles, str):
+        titles = [titles]
+
+    n_matrices = len(matrices)
+
+    plt.figure(figsize = (7 * n_matrices, 6))
+
+    for i, matrix in enumerate(matrices):
+        matrix_to_plot = matrix.astype(float)
+
+        if normalize:
+            row_sums = matrix_to_plot.sum(axis = 1, keepdims = True)
+            matrix_to_plot = matrix_to_plot / np.maximum(row_sums, 1)
+
+        plt.subplot(1, n_matrices, i + 1)
+        plt.imshow(matrix_to_plot, cmap = "Blues", aspect = "auto")
+        plt.title(titles[i])
+        plt.xlabel("Predicted class")
+        plt.ylabel("True class")
+        plt.colorbar()
+
     plt.tight_layout()
     plt.show()
+
