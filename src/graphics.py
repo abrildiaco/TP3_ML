@@ -82,3 +82,27 @@ def plot_loss_history(history):
     plt.legend()
     plt.tight_layout()
     plt.show()
+
+
+def plot_confusion_matrix(matrix, title = "Confusion matrix", normalize = False):
+    """
+    Plots a confusion matrix.
+
+    Arguments:
+        matrix (np.ndarray): Confusion matrix.
+        title (str): Plot title.
+        normalize (bool): Whether to normalize values by true class counts.
+
+    Returns:
+        None
+    """
+    matrix_to_plot = matrix.astype(float)
+
+    plt.figure(figsize = (8, 7))
+    plt.imshow(matrix_to_plot, cmap = "Blues", aspect = "auto")
+    plt.title(title)
+    plt.xlabel("Predicted class")
+    plt.ylabel("True class")
+    plt.colorbar()
+    plt.tight_layout()
+    plt.show()

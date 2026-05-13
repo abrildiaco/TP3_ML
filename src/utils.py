@@ -1,5 +1,6 @@
 import numpy as np
-
+import pandas as pd
+from metrics import evaluate_model
 
 def dataset_summary(X, y, max_sample = 10000, random_state = 42):
     """
@@ -58,3 +59,74 @@ def dataset_summary(X, y, max_sample = 10000, random_state = 42):
     print(f"Max/min ratio: {counts.max() / counts.min():.2f}")
 
     return classes, counts
+
+
+def train_and_evaluate_model(model, X_train, y_train, X_val, y_val, n_classes, epochs = 50, batch_size = None):
+    """
+    Trains and evaluates a model.
+
+    Arguments:
+        model (MLP): Model to train.
+        X_train (np.ndarray): Training data.
+        y_train (np.ndarray): Training labels.
+        X_val (np.ndarray): Validation data.
+        y_val (np.ndarray): Validation labels.
+        epochs (int): Number of training epochs.
+        batch_size (int): Number of samples per mini-batch.
+
+    Returns:
+        results (dict): Dictionary containing history, metrics, and training cost.
+    """
+    history = model.fit(
+        X_train,
+        y_train,
+        X_val = X_val,
+        y_val = y_val,
+        epochs = epochs,
+        batch_size = batch_size,
+        verbose = True
+    )
+
+    train_metrics = evaluate_model(model, X_train, y_train, n_classes)
+    val_metrics = evaluate_model(model, X_val, y_val, n_classes)
+
+    results = {
+        "model": model,
+        "history": history,
+        "epochs_trained": history["epochs_trained"],
+        "updates": history["updates"],
+        "train_metrics": train_metrics,
+        "val_metrics": val_metrics
+    }
+
+    return results
+
+
+def advanced_comparison_table(results_dict):
+    """
+    Creates a comparison table for advanced training strategies.
+
+    Arguments:
+        results_dict (dict): Dictionary containing model results.
+
+    Returns:
+        table (pd.DataFrame): Performance and training cost comparison table.
+    """
+    rows = []
+
+    for model_name, results in results_dict.items():
+        row = {
+            "Model": model_name,
+            "Epochs trained": results["epochs_trained"],
+            "Parameter updates": results["updates"],
+            "Train accuracy": results["train_metrics"]["accuracy"],
+            "Validation accuracy": results["val_metrics"]["accuracy"],
+            "Train cross-entropy": results["train_metrics"]["cross_entropy"],
+            "Validation cross-entropy": results["val_metrics"]["cross_entropy"],
+            "Train F1 macro": results["train_metrics"]["f1_macro"],
+            "Validation F1 macro": results["val_metrics"]["f1_macro"]
+        }
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
