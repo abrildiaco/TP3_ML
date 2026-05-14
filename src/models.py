@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 class MLP:
     def __init__(self, input_size, hidden_size, output_size, hidden_nodes, hidden_activation = "relu",
@@ -16,6 +17,7 @@ class MLP:
         
         self.learning_rate = learning_rate
         self.random_state = seed
+        self.rng = np.random.default_rng(seed)
 
         # ================== Advanced atributes ==================
         self.optimizer = optimizer
@@ -60,8 +62,8 @@ class MLP:
         # Initialize parameters between input layer and first hidden layer
         dim_in = self.input_size
         dim_out = self.hidden_nodes[0]
-        parameters["W1"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out))
-        parameters["b1"] = np.zeros((1, dim_out))
+        parameters["W1"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out)).astype(np.float32)
+        parameters["b1"] = np.zeros((1, dim_out), dtype = np.float32)
 
         # Initialize parameters for the next hidden layers
         for layer in range(2, len(self.hidden_nodes) + 1):
@@ -69,15 +71,15 @@ class MLP:
             dim_out = self.hidden_nodes[layer - 1]
 
             # loc = 0.0 is the mean of the normal distribution, scale = sqrt(2 / dim_in) is the standard deviation
-            parameters[f"W{layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out))
-            parameters[f"b{layer}"] = np.zeros((1, dim_out))
+            parameters[f"W{layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out)).astype(np.float32)
+            parameters[f"b{layer}"] = np.zeros((1, dim_out), dtype = np.float32)
 
         # Initialize parameters between last hidden layer and output layer
         output_layer = len(self.hidden_nodes) + 1
         dim_in = self.hidden_nodes[-1]
         dim_out = self.output_size
-        parameters[f"W{output_layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out))
-        parameters[f"b{output_layer}"] = np.zeros((1, dim_out))
+        parameters[f"W{output_layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out)).astype(np.float32)
+        parameters[f"b{output_layer}"] = np.zeros((1, dim_out), dtype = np.float32)
         
         return parameters
     
@@ -203,6 +205,8 @@ class MLP:
             learning_rate = self.learning_rate * (self.lr_decay ** epoch)
 
             return max(learning_rate, self.lr_min)
+        
+        raise ValueError(f"Unsupported learning rate schedule: {self.lr_schedule}")
     
     def _create_batches(self, X, y, batch_size = None, shuffle = True):
         """
@@ -219,10 +223,9 @@ class MLP:
         """
         n_samples = X.shape[0]
         indices = np.arange(n_samples)
-        rng = np.random.default_rng(self.random_state)
 
         if shuffle:
-            rng.shuffle(indices)
+            self.rng.shuffle(indices)
 
         if batch_size is None:
             batch_size = n_samples
@@ -254,7 +257,7 @@ class MLP:
             W = self.parameters[f"W{layer}"]
             penalty += np.sum(W ** 2)
 
-        return (self.l2_lambda / n_samples) * penalty
+        return (self.l2_lambda / (2 * n_samples)) * penalty
     
     def _add_l2_gradients(self, gradients, n_samples):
         """
@@ -310,45 +313,45 @@ class MLP:
         return y_proba, pre_activations, activations
     
     def backward_pass(self, X, y, pre_activations, activations):
-      """
-      Performs backpropagation and computes gradients for all parameters.
+        """
+        Performs backpropagation and computes gradients for all parameters.
 
-      Arguments:
-          X (np.ndarray): Input data with shape (n_samples, input_size).
-          y (np.ndarray): Array containing true class labels.
-          pre_activations (dict): Dictionary of pre-activation values for each layer.
-          activations (dict): Dictionary of activated outputs for each layer.
+        Arguments:
+            X (np.ndarray): Input data with shape (n_samples, input_size).
+            y (np.ndarray): Array containing true class labels.
+            pre_activations (dict): Dictionary of pre-activation values for each layer.
+            activations (dict): Dictionary of activated outputs for each layer.
 
-      Returns:
-          gradients (dict): Dictionary containing gradients for weights and biases.
-      """
-      gradients = {}
-      n_samples = X.shape[0]
-      n_layers = len(self.hidden_nodes) + 1 # Total layers = hidden layers + output layer
+        Returns:
+            gradients (dict): Dictionary containing gradients for weights and biases.
+        """
+        gradients = {}
+        n_samples = X.shape[0]
+        n_layers = len(self.hidden_nodes) + 1 # Total layers = hidden layers + output layer
 
-      # Encode labels
-      y_one_hot = self._one_hot_encode(y)
+        # Encode labels
+        y_one_hot = self._one_hot_encode(y)
 
-      # Output layer gradients
-      Z_L = activations[f"Z{n_layers}"]
-      dA = (Z_L - y_one_hot) / n_samples # The error signal for the output layer is the difference between 
-                                          # predicted probabilities and one-hot labels
-      
-      for layer in range(n_layers, 0, -1):
-          Z_prev = activations[f"Z{layer - 1}"]
-          W = self.parameters[f"W{layer}"]
+        # Output layer gradients
+        Z_L = activations[f"Z{n_layers}"]
+        dA = (Z_L - y_one_hot) / n_samples # The error signal for the output layer is the difference between 
+                                            # predicted probabilities and one-hot labels
+        
+        for layer in range(n_layers, 0, -1):
+            Z_prev = activations[f"Z{layer - 1}"]
+            W = self.parameters[f"W{layer}"]
 
-          # Compute gradients
-          gradients[f"dW{layer}"] = Z_prev.T @ dA
-          gradients[f"db{layer}"] = np.sum(dA, axis = 0, keepdims = True)
+            # Compute gradients
+            gradients[f"dW{layer}"] = Z_prev.T @ dA
+            gradients[f"db{layer}"] = np.sum(dA, axis = 0, keepdims = True)
 
-          # Compute error signal for the previous layer
-          if layer > 1: # No need to compute dA for the input layer
-              dZ_prev = dA @ W.T
-              A_prev = pre_activations[f"A{layer - 1}"]
-              dA = dZ_prev * self._relu_derivate(A_prev)
+            # Compute error signal for the previous layer
+            if layer > 1: # No need to compute dA for the input layer
+                dZ_prev = dA @ W.T
+                A_prev = pre_activations[f"A{layer - 1}"]
+                dA = dZ_prev * self._relu_derivate(A_prev)
 
-      return gradients
+        return gradients
 
     def _update_parameters_gd(self, gradients, learning_rate):
         """
@@ -370,6 +373,12 @@ class MLP:
     def _initialize_adam(self):
         """
         Initializes Adam first and second moment estimates.
+
+        Arguments:
+            None
+
+        Returns:
+            None
         """
         self.adam_m = {}
         self.adam_v = {}
@@ -433,7 +442,7 @@ class MLP:
 
     def _compute_loss(self, y, y_proba):
         """
-        Computes cross-entropy loss including L2 regularization if enabled.
+        Computes cross-entropy loss.
 
         Arguments:
             y (np.ndarray): Array containing true class labels.
@@ -443,9 +452,6 @@ class MLP:
             loss (float): Computed loss.
         """
         loss = self._cross_entropy_loss(y, y_proba)
-
-        if self.l2_lambda > 0:
-            loss += self._l2_penalty(len(y))
 
         return loss
     
@@ -497,6 +503,9 @@ class MLP:
             train_loss += batch_loss * len(y_batch) / X.shape[0]
             n_updates += 1
 
+        if self.l2_lambda > 0:
+            train_loss += self._l2_penalty(X.shape[0])
+
         n_batches = len(batches)
 
         return train_loss, n_updates, n_batches
@@ -514,6 +523,9 @@ class MLP:
         """
         y_val_proba, _, _ = self.foward_pass(X_val)
         val_loss = self._compute_loss(y_val, y_val_proba)
+
+        if self.l2_lambda > 0:
+            val_loss += self._l2_penalty(len(y_val))
 
         return val_loss
     
@@ -570,7 +582,7 @@ class MLP:
             verbose (bool): Whether to print the loss during training.
 
         Returns:
-            history (dict): Dictionary containing training and validation loss history.
+            history (dict): Dictionary containing training history, validation history, and training time.
         """
         history = {
             "train_loss": [],
@@ -578,14 +590,20 @@ class MLP:
             "learning_rate": [],
             "epochs_trained": 0,
             "updates": 0,
-            "batches_per_epoch": []
+            "batches_per_epoch": [],
+            "epoch_time": [],
+            "training_time": 0.0,
+            "stopped_early": False
         }
         
         best_val_loss = np.inf
         best_parameters = None
         epochs_without_improvement = 0
+        start_time = time.perf_counter()
 
         for epoch in range(epochs):
+            epoch_start_time = time.perf_counter()
+
             # Compute learning rate for currente epoch
             learning_rate = self._get_learning_rate(epoch, epochs)
             train_loss, n_updates, n_batches = self._train_epoch(X, y, batch_size, learning_rate)
@@ -615,16 +633,25 @@ class MLP:
                         if best_parameters is not None:
                             self.parameters = best_parameters
 
+                        epoch_end_time = time.perf_counter()
+                        history["epoch_time"].append(epoch_end_time - epoch_start_time)
+                        history["training_time"] = epoch_end_time - start_time
+                        history["stopped_early"] = True
+
                         if verbose:
                             print(f"Early stopping at epoch {epoch + 1}")
 
                         break
 
+            epoch_end_time = time.perf_counter()
+            history["epoch_time"].append(epoch_end_time - epoch_start_time)
+            history["training_time"] = epoch_end_time - start_time
+
             if verbose:
                 if X_val is not None and y_val is not None:
-                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - val loss: {val_loss:.4f}")
+                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - val loss: {val_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s")
                 else:
-                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f}")
+                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s")
 
         return history
     
