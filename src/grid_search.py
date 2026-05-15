@@ -28,7 +28,7 @@ def build_param_combinations(param_grid):
     return combinations
 
 
-def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs = 70, batch_size = None, verbose = True):
+def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs = 70, batch_size = None, verbose = False):
     """
     Performs grid search over a set of hyperparameter combinations.
 

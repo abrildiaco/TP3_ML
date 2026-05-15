@@ -841,17 +841,34 @@ class TorchMLP(nn.Module):
         input_size (int): Number of input features.
         hidden_nodes (list): Number of neurons in each hidden layer.
         output_size (int): Number of output classes.
+        activation (str): Activation function to use in hidden layers.
+        dropout_rate (float): Dropout probability after each hidden activation.
     """
 
-    def __init__(self, input_size, hidden_nodes, output_size):
+    def __init__(self, input_size, hidden_nodes, output_size, activation = "relu", dropout_rate = 0.0):
         super().__init__()
+
+        activation_functions = {
+            "relu": nn.ReLU,
+            "leaky_relu": nn.LeakyReLU,
+            "silu": nn.SiLU,
+            "swish": nn.SiLU,
+            "gelu": nn.GELU
+        }
+
+        if activation not in activation_functions:
+            raise ValueError(f"Unsupported activation function: {activation}")
 
         layers = []
         previous_size = input_size
 
         for hidden_size in hidden_nodes:
             layers.append(nn.Linear(previous_size, hidden_size))
-            layers.append(nn.ReLU())
+            layers.append(activation_functions[activation]())
+
+            if dropout_rate > 0:
+                layers.append(nn.Dropout(p = dropout_rate))
+
             previous_size = hidden_size
 
         layers.append(nn.Linear(previous_size, output_size))

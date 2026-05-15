@@ -1,5 +1,5 @@
 import numpy as np
-
+import pandas as pd
 
 def accuracy_score(y_true, y_pred):
     """
@@ -59,7 +59,7 @@ def confusion_matrix(y_true, y_pred, n_classes):
     return matrix
 
 
-def f1_score_macro(y_true, y_pred, n_classes):
+def f1_score(y_true, y_pred, n_classes):
     """
     Computes macro-averaged F1-score.
 
@@ -110,7 +110,7 @@ def evaluate_model(model, X, y, n_classes):
     results = {
         "accuracy": accuracy_score(y, y_pred),
         "cross_entropy": cross_entropy_score(y, y_proba),
-        "f1_macro": f1_score_macro(y, y_pred, n_classes),
+        "f1_score": f1_score(y, y_pred, n_classes),
         "confusion_matrix": confusion_matrix(y, y_pred, n_classes)
     }
 
@@ -134,12 +134,12 @@ def performance_report_table(train_results, val_results):
             "Train": [
                 train_results["accuracy"],
                 train_results["cross_entropy"],
-                train_results["f1_macro"]
+                train_results["f1_score"]
             ],
             "Validation": [
                 val_results["accuracy"],
                 val_results["cross_entropy"],
-                val_results["f1_macro"]
+                val_results["f1_score"]
             ]
         },
         index = [

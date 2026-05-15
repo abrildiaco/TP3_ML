@@ -59,7 +59,7 @@ def plot_images(X, y, indices = [0, 1, 2]):
     plt.show()
 
 
-def plot_loss_history(history):
+def plot_loss_history(history, model_name = "M1"):
     """
     Plots the evolution of the cross-entropy loss during training.
 
@@ -76,7 +76,7 @@ def plot_loss_history(history):
     if "val_loss" in history and len(history["val_loss"]) > 0:
         plt.plot(history["val_loss"], label = "Validation loss", color = "#AA1D22")
 
-    plt.title("Cross-entropy loss during training")
+    plt.title(f"{model_name} Cross-entropy loss during training")
     plt.xlabel("Epoch")
     plt.ylabel("Cross-entropy")
     plt.legend()
@@ -126,3 +126,86 @@ def plot_confusion_matrix(matrices, titles = None, normalize = False):
     plt.tight_layout()
     plt.show()
 
+
+def plot_m1_m2_comparison(results_dict, title = "M1 vs M2 validation performance"):
+    """
+    Plots a comparison between models using classification metrics and cross-entropy.
+
+    Arguments:
+        results_dict (dict): Dictionary with model names as keys and metric dictionaries as values.
+        title (str): Plot title.
+
+    Returns:
+        None
+    """
+    model_names = list(results_dict.keys())
+
+    accuracy_values = [results_dict[name]["accuracy"] for name in model_names]
+    f1_values = [results_dict[name]["f1_macro"] for name in model_names]
+    ce_values = [results_dict[name]["cross_entropy"] for name in model_names]
+
+    x = np.arange(len(model_names))
+    width = 0.35
+
+    plt.figure(figsize = (11, 4))
+
+    plt.subplot(1, 2, 1)
+    plt.bar(x - width / 2, accuracy_values, width = width, label = "Accuracy", color = "#082450")
+    plt.bar(x + width / 2, f1_values, width = width, label = "F1 Macro", color = "#095F2A")
+    plt.xticks(x, model_names)
+    plt.ylim(0, 1)
+    plt.ylabel("Score")
+    plt.title("Accuracy and F1 Macro")
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.bar(model_names, ce_values, color = "#AA1D22")
+    plt.ylabel("Cross-Entropy")
+    plt.title("Cross-Entropy")
+
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_final_models_comparison(results_M0, results_M1, results_M2, results_M3):
+    model_names = [
+        "M0 - Base NumPy",
+        "M1 - Best NumPy",
+        "M2 - PyTorch M1",
+        "M3 - Best PyTorch"
+    ]
+
+    results = [
+        results_M0,
+        results_M1,
+        results_M2,
+        results_M3
+    ]
+
+    accuracy_values = [result["accuracy"] for result in results]
+    f1_values = [result["f1_score"] for result in results]
+    ce_values = [result["cross_entropy"] for result in results]
+
+    x = np.arange(len(model_names))
+    width = 0.35
+
+    plt.figure(figsize = (13, 4))
+
+    plt.subplot(1, 2, 1)
+    plt.bar(x - width / 2, accuracy_values, width = width, label = "Accuracy", color = "#082450")
+    plt.bar(x + width / 2, f1_values, width = width, label = "F1", color = "#105F1D")
+    plt.xticks(x, model_names, rotation = 20, ha = "right")
+    plt.ylim(0, 1)
+    plt.ylabel("Score")
+    plt.title("Test Accuracy and F1")
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.bar(model_names, ce_values, color = "#AA1D22")
+    plt.xticks(rotation = 20, ha = "right")
+    plt.ylabel("Cross-Entropy")
+    plt.title("Test Cross-Entropy")
+
+    plt.tight_layout()
+    plt.show()

@@ -2,11 +2,6 @@ import numpy as np
 import pandas as pd
 from src.metrics import evaluate_model
 
-try:
-    from IPython.display import display
-except ImportError:
-    display = print
-
 def dataset_summary(X, y, max_sample = 10000, random_state = 42):
     """
     Prints an exploratory summary of the image dataset.
@@ -121,13 +116,13 @@ def print_training_summary(model_name, history, train_metrics, val_metrics):
         "Train metrics: "
         f"accuracy={train_metrics['accuracy']:.4f}, "
         f"cross_entropy={train_metrics['cross_entropy']:.4f}, "
-        f"f1_macro={train_metrics['f1_macro']:.4f}"
+        f"f1_score={train_metrics['f1_score']:.4f}"
     )
     print(
         "Validation metrics: "
         f"accuracy={val_metrics['accuracy']:.4f}, "
         f"cross_entropy={val_metrics['cross_entropy']:.4f}, "
-        f"f1_macro={val_metrics['f1_macro']:.4f}"
+        f"f1_score={val_metrics['f1_score']:.4f}"
     )
 
 
@@ -157,8 +152,8 @@ def results_table(results_dict):
             "Val. Accuracy": results["val_metrics"]["accuracy"],
             "Train Cross-Entropy": results["train_metrics"]["cross_entropy"],
             "Val. Cross-Entropy": results["val_metrics"]["cross_entropy"],
-            "Train F1": results["train_metrics"]["f1_macro"],
-            "Val. F1": results["val_metrics"]["f1_macro"]
+            "Train F1": results["train_metrics"]["f1_score"],
+            "Val. F1": results["val_metrics"]["f1_score"]
         }
 
         rows.append(row)
@@ -167,7 +162,7 @@ def results_table(results_dict):
 
 
 def train_and_evaluate_model(model, X_train, y_train, X_val, y_val, n_classes, epochs = 50,
-                             batch_size = None, model_name = "Model", verbose = True):
+                             batch_size = None, model_name = "Model", verbose = False):
     """
     Trains and evaluates a model.
 
@@ -243,3 +238,68 @@ def advanced_comparison_table(results_dict):
     display(styled_table)
 
     return table
+
+
+def display_final_models_table(results_M0, results_M1, results_M2, results_M3):
+    rows = [
+        {
+            "Model": "M0 - Base NumPy",
+            "Test Accuracy": results_M0["accuracy"],
+            "Test Cross-Entropy": results_M0["cross_entropy"],
+            "Test F1": results_M0["f1_score"]
+        },
+        {
+            "Model": "M1 - Best NumPy",
+            "Test Accuracy": results_M1["accuracy"],
+            "Test Cross-Entropy": results_M1["cross_entropy"],
+            "Test F1": results_M1["f1_score"]
+        },
+        {
+            "Model": "M2 - PyTorch M1",
+            "Test Accuracy": results_M2["accuracy"],
+            "Test Cross-Entropy": results_M2["cross_entropy"],
+            "Test F1": results_M2["f1_score"]
+        },
+        {
+            "Model": "M3 - Best PyTorch",
+            "Test Accuracy": results_M3["accuracy"],
+            "Test Cross-Entropy": results_M3["cross_entropy"],
+            "Test F1": results_M3["f1_score"]
+        }
+    ]
+
+    table = pd.DataFrame(rows)
+
+    display(
+        table.style
+        .hide(axis = "index")
+        .format({
+            "Test Accuracy": "{:.3f}",
+            "Test Cross-Entropy": "{:.3f}",
+            "Test F1": "{:.3f}"
+        })
+        .set_table_styles([
+            {"selector": "th", "props": [("text-align", "center")]},
+            {"selector": "td", "props": [("text-align", "center")]}
+        ])
+    )
+
+def add_noise(X, noise_level, random_state = 42):
+    """
+    Adds Gaussian noise to normalized images.
+
+    Arguments:
+        X (np.ndarray): Normalized images.
+        noise_level (float): Standard deviation of the Gaussian noise.
+        random_state (int): Random seed.
+
+    Returns:
+        X_noisy (np.ndarray): Noisy images clipped to [0, 1].
+    """
+    rng = np.random.default_rng(random_state)
+    noise = rng.normal(loc = 0.0, scale = noise_level, size = X.shape)
+
+    X_noisy = X + noise
+    X_noisy = np.clip(X_noisy, 0.0, 1.0)
+
+    return X_noisy.astype(np.float32)

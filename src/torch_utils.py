@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from src.metrics import accuracy_score, cross_entropy_score, confusion_matrix, f1_score
 
 def train_torch_model(model, train_loader, val_loader, loss_fn, optimizer, epochs, device, verbose = False):
     """
@@ -55,7 +57,7 @@ def train_torch_model(model, train_loader, val_loader, loss_fn, optimizer, epoch
         train_loss = total_loss / total
         train_accuracy = correct / total
 
-        val_loss, val_accuracy = evaluate_torch_model(model, val_loader, loss_fn, device)
+        val_loss, val_accuracy = evaluate_torch_full_metrics(model, val_loader, loss_fn, device)
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
@@ -75,42 +77,46 @@ def train_torch_model(model, train_loader, val_loader, loss_fn, optimizer, epoch
     return history
 
 
-def evaluate_torch_model(model, dataloader, loss_fn, device):
+def evaluate_torch_full_metrics(model, dataloader, n_classes, device):
     """
-    Evaluates a PyTorch model.
+    Evaluates a PyTorch model using the same metrics as the NumPy models.
 
     Arguments:
-        model (nn.Module): PyTorch model.
+        model (nn.Module): Trained PyTorch model.
         dataloader (DataLoader): DataLoader with evaluation data.
-        loss_fn: Loss function.
+        n_classes (int): Number of classes.
         device: Device used for computation.
 
     Returns:
-        avg_loss (float): Average loss.
-        accuracy (float): Classification accuracy.
+        results (dict): Dictionary containing accuracy, cross-entropy, F1 macro and confusion matrix.
     """
-    # Set model to evaluation mode
+    y_true_all = []
+    y_pred_all = []
+    y_proba_all = []
+
     model.eval()
 
-    total_loss = 0.0
-    correct = 0
-    total = 0
-
-    with torch.no_grad(): # Disable gradient computation for evaluation
+    with torch.no_grad():
         for X_batch, y_batch in dataloader:
             X_batch = X_batch.to(device)
-            y_batch = y_batch.to(device)
 
             logits = model(X_batch)
-            loss = loss_fn(logits, y_batch)
+            y_proba = torch.softmax(logits, dim = 1)
+            y_pred = torch.argmax(y_proba, dim = 1)
 
-            total_loss += loss.item() * X_batch.shape[0]
+            y_true_all.append(y_batch.cpu().numpy())
+            y_pred_all.append(y_pred.cpu().numpy())
+            y_proba_all.append(y_proba.cpu().numpy())
 
-            y_pred = torch.argmax(logits, dim = 1)
-            correct += (y_pred == y_batch).sum().item()
-            total += y_batch.shape[0]
+    y_true = np.concatenate(y_true_all)
+    y_pred = np.concatenate(y_pred_all)
+    y_proba = np.concatenate(y_proba_all)
 
-    avg_loss = total_loss / total
-    accuracy = correct / total
+    results = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "cross_entropy": cross_entropy_score(y_true, y_proba),
+        "f1_score": f1_score(y_true, y_pred, n_classes),
+        "confusion_matrix": confusion_matrix(y_true, y_pred, n_classes)
+    }
 
-    return avg_loss, accuracy
+    return results
