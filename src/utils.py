@@ -135,12 +135,12 @@ def advanced_comparison_table(results_dict):
     styled_table = table.style \
         .hide(axis = "index") \
         .format({
-            "Train Accuracy.": "{:.2f}",
-            "Val. Accuracy.": "{:.2f}",
-            "Train Cross-Entropy": "{:.2f}",
-            "Val. Cross-Entropy": "{:.2f}",
-            "Train F1": "{:.2f}",
-            "Val. F1": "{:.2f}"
+            "Train Accuracy.": "{:.3f}",
+            "Val. Accuracy.": "{:.3f}",
+            "Train Cross-Entropy": "{:.3f}",
+            "Val. Cross-Entropy": "{:.3f}",
+            "Train F1": "{:.3f}",
+            "Val. F1": "{:.3f}"
         }) \
         .set_table_styles([
             {"selector": "th", "props": [("text-align", "center")]},

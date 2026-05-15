@@ -18,6 +18,7 @@ def build_param_combinations(param_grid):
 
         for combination in combinations:
             for param_value in param_values:
+                # Add one value of the current parameter to each previous combination
                 new_combination = combination.copy()
                 new_combination[param_name] = param_value
                 new_combinations.append(new_combination)
@@ -27,11 +28,11 @@ def build_param_combinations(param_grid):
     return combinations
 
 
-def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs = 100, batch_size = None, verbose = True):
+def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs = 70, batch_size = None, verbose = True):
     """
     Performs grid search over a set of hyperparameter combinations.
 
-    Each model is trained on the training set and evaluated using the final
+    Each model is trained on the training set and evaluated using the best
     validation cross-entropy loss. The best model is selected as the one with
     the lowest validation loss.
 
@@ -47,12 +48,14 @@ def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs 
         verbose (bool): Whether to print progress during grid search.
 
     Returns:
+        best_model (object): Trained model with the best validation loss.
         best_params (dict): Hyperparameter combination with the lowest validation loss.
         best_score (float): Best validation loss obtained.
-        results (list): List with the validation loss and parameters for each combination.
+        results (list): List with validation loss, parameters, history, and model for each combination.
     """
     best_score = np.inf
     best_params = None
+    best_model = None
     results = []
 
     combinations = build_param_combinations(param_grid)
@@ -64,20 +67,34 @@ def grid_search(model_class, param_grid, X_train, y_train, X_val, y_val, epochs 
 
         model = model_class(**params)
 
-        history = model.fit(X_train, y_train, X_val = X_val, y_val = y_val, epochs = epochs,
-                            batch_size = batch_size)
+        history = model.fit(
+            X_train,
+            y_train,
+            X_val = X_val,
+            y_val = y_val,
+            epochs = epochs,
+            batch_size = batch_size,
+            verbose = False
+        )
 
-        val_score = history["val_loss"][-1]
+        # Select the best validation loss reached during training
+        val_score = min(history["val_loss"])
 
         results.append({
             "params": params,
             "val_loss": val_score,
-            "history": history
+            "history": history,
+            "model": model
         })
 
-        # Update best score and parameters if current model is better
         if val_score < best_score:
+            # Keep the trained model associated with the best score
             best_score = val_score
             best_params = params
+            best_model = model
 
-    return best_params, best_score, results
+        if verbose:
+            print(f"Validation loss: {val_score:.4f}")
+            print("-" * 40)
+
+    return best_model, best_params, best_score, results

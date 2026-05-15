@@ -29,8 +29,10 @@ def cross_entropy_score(y_true, y_proba):
     """
     epsilon = 1e-12
     y_true = y_true.astype(int)
+    # Clip probabilities to avoid log(0)
     y_proba = np.clip(y_proba, epsilon, 1.0 - epsilon)
     
+    # Keep only the probability assigned to the true class
     loss = -np.mean(np.log(y_proba[np.arange(len(y_true)), y_true]))
 
     return loss
@@ -61,6 +63,9 @@ def f1_score_macro(y_true, y_pred, n_classes):
     """
     Computes macro-averaged F1-score.
 
+    Macro F1 computes the F1-score for each class and then averages them,
+    giving the same weight to every class.
+
     Arguments:
         y_true (np.ndarray): True class labels.
         y_pred (np.ndarray): Predicted class labels.
@@ -71,6 +76,7 @@ def f1_score_macro(y_true, y_pred, n_classes):
     """
     matrix = confusion_matrix(y_true, y_pred, n_classes)
 
+    # Values needed to compute precision and recall by class
     true_positives = np.diag(matrix)
     false_positives = np.sum(matrix, axis = 0) - true_positives # Sum over columns minus true positives
     false_negatives = np.sum(matrix, axis = 1) - true_positives # Sum over rows minus true positives
@@ -97,6 +103,7 @@ def evaluate_model(model, X, y, n_classes):
     Returns:
         results (dict): Dictionary containing performance metrics.
     """
+    # First get probabilities and then convert them into class predictions
     y_proba = model.predict_proba(X)
     y_pred = np.argmax(y_proba, axis = 1)
 
@@ -112,14 +119,14 @@ def evaluate_model(model, X, y, n_classes):
 
 def performance_report_table(train_results, val_results):
     """
-    Creates a pandas DataFrame with performance metrics for training and validation.
+    Displays a pandas table with performance metrics for training and validation.
 
     Arguments:
         train_results (dict): Metrics computed on the training set.
         val_results (dict): Metrics computed on the validation set.
 
     Returns:
-        report (pd.DataFrame): Table containing performance metrics.
+        None
     """
     import pandas as pd
 
@@ -142,5 +149,10 @@ def performance_report_table(train_results, val_results):
             "F1-Score Macro"
         ]
     )
+    styled_table = report.style \
+        .format({
+            "Train": "{:.3f}",
+            "Validation": "{:.3f}",
+        }) \
 
-    display(report)
+    display(styled_table)

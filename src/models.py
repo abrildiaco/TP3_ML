@@ -1,7 +1,33 @@
 import numpy as np
 import time
+from torch import nn
 
 class MLP:
+    """
+    Multi-layer perceptron implemented with NumPy.
+
+    Arguments:
+        input_size (int): Number of input features.
+        hidden_size (int): Number of hidden layers.
+        output_size (int): Number of output classes.
+        hidden_nodes (list): Number of neurons in each hidden layer.
+        hidden_activation (str): Activation function for hidden layers.
+        output_activation (str): Activation function for the output layer.
+        learning_rate (float): Initial learning rate.
+        optimizer (str): Optimizer to use ("gd" or "adam").
+        lr_schedule (str): Learning rate schedule ("linear", "exponential" or None).
+        lr_min (float): Minimum learning rate.
+        lr_decay (float): Decay factor for exponential scheduling.
+        l2_lambda (float): L2 regularization strength.
+        early_stopping (bool): Whether to use early stopping.
+        patience (int): Number of epochs without improvement before stopping.
+        min_delta (float): Minimum improvement needed for early stopping.
+        beta1 (float): Adam beta1 parameter.
+        beta2 (float): Adam beta2 parameter.
+        epsilon (float): Small value for numerical stability.
+        seed (int): Random seed.
+    """
+
     def __init__(self, input_size, hidden_size, output_size, hidden_nodes, hidden_activation = "relu",
                  output_activation = "softmax", learning_rate = 0.1, optimizer = "gd", lr_schedule = None, 
                  lr_min = 1e-4, lr_decay = 0.95, l2_lambda = 0.0, early_stopping = False, patience = 10,
@@ -19,7 +45,7 @@ class MLP:
         self.random_state = seed
         self.rng = np.random.default_rng(seed)
 
-        # ================== Advanced atributes ==================
+        # ================== Advanced attributes ==================
         self.optimizer = optimizer
         
         # --------------- Learning rate scheduling ---------------
@@ -70,7 +96,7 @@ class MLP:
             dim_in = self.hidden_nodes[layer - 2]
             dim_out = self.hidden_nodes[layer - 1]
 
-            # loc = 0.0 is the mean of the normal distribution, scale = sqrt(2 / dim_in) is the standard deviation
+            # He initialization for ReLU layers
             parameters[f"W{layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out)).astype(np.float32)
             parameters[f"b{layer}"] = np.zeros((1, dim_out), dtype = np.float32)
 
@@ -105,7 +131,8 @@ class MLP:
         Returns:
             probabilities (np.ndarray): Class probabilities for each sample.
         """
-        z_shifted = A - np.max(A, axis = 1, keepdims = True) # Shift for numerical stability
+        # Shift for numerical stability
+        z_shifted = A - np.max(A, axis = 1, keepdims = True)
         exp_z = np.exp(z_shifted)
         probabilities = exp_z / np.sum(exp_z, axis = 1, keepdims = True)
 
@@ -128,6 +155,7 @@ class MLP:
         class_indices = y
 
         y_one_hot = np.zeros((n_samples, self.output_size), dtype = np.float32)
+        # Assign 1 to the true class of each sample
         y_one_hot[row_indices, class_indices] = 1.0
 
         return y_one_hot
@@ -199,11 +227,13 @@ class MLP:
             progress = epoch / max(epochs - 1, 1)
             learning_rate = self.learning_rate * (1 - progress)
 
+            # Saturate at minimum learning rate
             return max(learning_rate, self.lr_min)
 
         if self.lr_schedule == "exponential":
             learning_rate = self.learning_rate * (self.lr_decay ** epoch)
 
+            # Saturate at minimum learning rate
             return max(learning_rate, self.lr_min)
         
         raise ValueError(f"Unsupported learning rate schedule: {self.lr_schedule}")
@@ -228,6 +258,7 @@ class MLP:
             self.rng.shuffle(indices)
 
         if batch_size is None:
+            # Full-batch gradient descent
             batch_size = n_samples
 
         batches = []
@@ -255,6 +286,7 @@ class MLP:
 
         for layer in range(1, n_layers + 1):
             W = self.parameters[f"W{layer}"]
+            # Regularize weights, not biases
             penalty += np.sum(W ** 2)
 
         return (self.l2_lambda / (2 * n_samples)) * penalty
@@ -273,6 +305,7 @@ class MLP:
         n_layers = len(self.hidden_nodes) + 1
 
         for layer in range(1, n_layers + 1):
+            # Add derivative of L2 penalty
             gradients[f"dW{layer}"] += (self.l2_lambda / n_samples) * self.parameters[f"W{layer}"]
 
         return gradients
@@ -415,6 +448,7 @@ class MLP:
                 self.adam_m[gradient_key] = self.beta1 * self.adam_m[gradient_key] + (1 - self.beta1) * gradients[gradient_key]
                 self.adam_v[gradient_key] = self.beta2 * self.adam_v[gradient_key] + (1 - self.beta2) * (gradients[gradient_key] ** 2)
 
+                # Correct Adam bias
                 m_corrected = self.adam_m[gradient_key] / (1 - self.beta1 ** self.adam_t)
                 v_corrected = self.adam_v[gradient_key] / (1 - self.beta2 ** self.adam_t)
 
@@ -500,6 +534,7 @@ class MLP:
 
         for X_batch, y_batch in batches:
             batch_loss = self._train_batch(X_batch, y_batch, learning_rate)
+            # Weighted average for uneven last batch
             train_loss += batch_loss * len(y_batch) / X.shape[0]
             n_updates += 1
 
@@ -568,7 +603,7 @@ class MLP:
 
         return should_stop, best_val_loss, epochs_without_improvement, improved
     
-    def fit(self, X, y, X_val = None, y_val = None, epochs = 10, batch_size = None, verbose = True):
+    def fit(self, X, y, X_val = None, y_val = None, epochs = 70, batch_size = None, verbose = True):
         """
         Trains the neural network using backpropagation.
 
@@ -604,7 +639,7 @@ class MLP:
         for epoch in range(epochs):
             epoch_start_time = time.perf_counter()
 
-            # Compute learning rate for currente epoch
+            # Compute learning rate for current epoch
             learning_rate = self._get_learning_rate(epoch, epochs)
             train_loss, n_updates, n_batches = self._train_epoch(X, y, batch_size, learning_rate)
 
@@ -631,6 +666,7 @@ class MLP:
 
                     if should_stop:
                         if best_parameters is not None:
+                            # Restore best validation weights
                             self.parameters = best_parameters
 
                         epoch_end_time = time.perf_counter()
@@ -683,3 +719,44 @@ class MLP:
         y_pred = np.argmax(y_proba, axis = 1)
 
         return y_pred
+
+
+# PyTorch model ----------------------------------------------------------------------------------------------------
+class TorchMLP(nn.Module):
+    """
+    Multi-layer perceptron implemented with PyTorch.
+
+    Arguments:
+        input_size (int): Number of input features.
+        hidden_nodes (list): Number of neurons in each hidden layer.
+        output_size (int): Number of output classes.
+    """
+
+    def __init__(self, input_size, hidden_nodes, output_size):
+        super().__init__()
+
+        layers = []
+        previous_size = input_size
+
+        for hidden_size in hidden_nodes:
+            layers.append(nn.Linear(previous_size, hidden_size))
+            layers.append(nn.ReLU())
+            previous_size = hidden_size
+
+        layers.append(nn.Linear(previous_size, output_size))
+
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, X):
+        """
+        Performs the forward pass.
+
+        Arguments:
+            X (torch.Tensor): Input tensor.
+
+        Returns:
+            logits (torch.Tensor): Raw class scores.
+        """
+        logits = self.network(X)
+
+        return logits
