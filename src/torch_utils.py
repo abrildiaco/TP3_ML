@@ -75,7 +75,6 @@ def train_torch_model(model, train_loader, val_loader, loss_fn, optimizer, epoch
     return history
 
 
-
 def evaluate_torch_model(model, dataloader, loss_fn, device):
     """
     Evaluates a PyTorch model.

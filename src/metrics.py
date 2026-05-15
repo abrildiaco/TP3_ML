@@ -128,7 +128,6 @@ def performance_report_table(train_results, val_results):
     Returns:
         None
     """
-    import pandas as pd
 
     report = pd.DataFrame(
         {

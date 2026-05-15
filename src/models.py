@@ -3,35 +3,11 @@ import time
 from torch import nn
 
 class MLP:
-    """
-    Multi-layer perceptron implemented with NumPy.
-
-    Arguments:
-        input_size (int): Number of input features.
-        hidden_size (int): Number of hidden layers.
-        output_size (int): Number of output classes.
-        hidden_nodes (list): Number of neurons in each hidden layer.
-        hidden_activation (str): Activation function for hidden layers.
-        output_activation (str): Activation function for the output layer.
-        learning_rate (float): Initial learning rate.
-        optimizer (str): Optimizer to use ("gd" or "adam").
-        lr_schedule (str): Learning rate schedule ("linear", "exponential" or None).
-        lr_min (float): Minimum learning rate.
-        lr_decay (float): Decay factor for exponential scheduling.
-        l2_lambda (float): L2 regularization strength.
-        early_stopping (bool): Whether to use early stopping.
-        patience (int): Number of epochs without improvement before stopping.
-        min_delta (float): Minimum improvement needed for early stopping.
-        beta1 (float): Adam beta1 parameter.
-        beta2 (float): Adam beta2 parameter.
-        epsilon (float): Small value for numerical stability.
-        seed (int): Random seed.
-    """
-
     def __init__(self, input_size, hidden_size, output_size, hidden_nodes, hidden_activation = "relu",
                  output_activation = "softmax", learning_rate = 0.1, optimizer = "gd", lr_schedule = None, 
                  lr_min = 1e-4, lr_decay = 0.95, l2_lambda = 0.0, early_stopping = False, patience = 10,
-                 min_delta = 1e-4, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8, seed = 42):        
+                 min_delta = 1e-4, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8, seed = 42,
+                 full_batch_chunk_size = 32000):        
         
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -45,7 +21,7 @@ class MLP:
         self.random_state = seed
         self.rng = np.random.default_rng(seed)
 
-        # ================== Advanced attributes ==================
+        # ================== Advanced atributes ==================
         self.optimizer = optimizer
         
         # --------------- Learning rate scheduling ---------------
@@ -66,6 +42,7 @@ class MLP:
         self.adam_m = None
         self.adam_v = None
         self.adam_t = 0
+        self.full_batch_chunk_size = full_batch_chunk_size
 
         self.parameters = self._initialize_parameters()
 
@@ -96,7 +73,7 @@ class MLP:
             dim_in = self.hidden_nodes[layer - 2]
             dim_out = self.hidden_nodes[layer - 1]
 
-            # He initialization for ReLU layers
+            # loc = 0.0 is the mean of the normal distribution, scale = sqrt(2 / dim_in) is the standard deviation
             parameters[f"W{layer}"] = rng.normal(loc = 0.0, scale = np.sqrt(2 / dim_in), size = (dim_in, dim_out)).astype(np.float32)
             parameters[f"b{layer}"] = np.zeros((1, dim_out), dtype = np.float32)
 
@@ -131,8 +108,7 @@ class MLP:
         Returns:
             probabilities (np.ndarray): Class probabilities for each sample.
         """
-        # Shift for numerical stability
-        z_shifted = A - np.max(A, axis = 1, keepdims = True)
+        z_shifted = A - np.max(A, axis = 1, keepdims = True) # Shift for numerical stability
         exp_z = np.exp(z_shifted)
         probabilities = exp_z / np.sum(exp_z, axis = 1, keepdims = True)
 
@@ -155,7 +131,6 @@ class MLP:
         class_indices = y
 
         y_one_hot = np.zeros((n_samples, self.output_size), dtype = np.float32)
-        # Assign 1 to the true class of each sample
         y_one_hot[row_indices, class_indices] = 1.0
 
         return y_one_hot
@@ -227,16 +202,66 @@ class MLP:
             progress = epoch / max(epochs - 1, 1)
             learning_rate = self.learning_rate * (1 - progress)
 
-            # Saturate at minimum learning rate
             return max(learning_rate, self.lr_min)
 
         if self.lr_schedule == "exponential":
             learning_rate = self.learning_rate * (self.lr_decay ** epoch)
 
-            # Saturate at minimum learning rate
             return max(learning_rate, self.lr_min)
         
         raise ValueError(f"Unsupported learning rate schedule: {self.lr_schedule}")
+    
+    def _resolve_chunk_size(self, n_samples, chunk_size):
+        """
+        Validates and bounds the chunk size used for memory-safe passes.
+
+        Arguments:
+            n_samples (int): Number of samples to process.
+            chunk_size (int): Maximum number of samples per chunk.
+
+        Returns:
+            chunk_size (int): Valid chunk size.
+        """
+        if n_samples <= 0:
+            raise ValueError("Cannot process an empty dataset.")
+
+        if chunk_size is None:
+            return n_samples
+
+        chunk_size = int(chunk_size)
+
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer.")
+
+        return min(chunk_size, n_samples)
+    
+    def _iter_batches(self, X, y, batch_size = None, shuffle = True):
+        """
+        Iterates over mini-batches from the dataset.
+
+        Arguments:
+            X (np.ndarray): Input data.
+            y (np.ndarray): Array containing true class labels.
+            batch_size (int): Number of samples per mini-batch.
+            shuffle (bool): Whether to shuffle samples before batching.
+
+        Returns:
+            Iterator containing mini-batches.
+        """
+        n_samples = X.shape[0]
+        indices = np.arange(n_samples)
+
+        if shuffle:
+            self.rng.shuffle(indices)
+
+        if batch_size is None:
+            batch_size = n_samples
+
+        for start in range(0, n_samples, batch_size):
+            end = start + batch_size
+            batch_indices = indices[start:end]
+
+            yield X[batch_indices], y[batch_indices]
     
     def _create_batches(self, X, y, batch_size = None, shuffle = True):
         """
@@ -251,25 +276,26 @@ class MLP:
         Returns:
             batches (list): List containing mini-batches.
         """
+        return list(self._iter_batches(X, y, batch_size = batch_size, shuffle = shuffle))
+    
+    def _iter_chunks(self, X, y, chunk_size):
+        """
+        Iterates over contiguous chunks without changing full-batch semantics.
+
+        Arguments:
+            X (np.ndarray): Input data.
+            y (np.ndarray): Array containing true class labels.
+            chunk_size (int): Maximum number of samples per chunk.
+
+        Returns:
+            Iterator containing chunks.
+        """
         n_samples = X.shape[0]
-        indices = np.arange(n_samples)
 
-        if shuffle:
-            self.rng.shuffle(indices)
+        for start in range(0, n_samples, chunk_size):
+            end = min(start + chunk_size, n_samples)
 
-        if batch_size is None:
-            # Full-batch gradient descent
-            batch_size = n_samples
-
-        batches = []
-
-        for start in range(0, n_samples, batch_size):
-            end = start + batch_size
-            batch_indices = indices[start:end]
-
-            batches.append((X[batch_indices], y[batch_indices]))
-
-        return batches
+            yield X[start:end], y[start:end]
     
     def _l2_penalty(self, n_samples):
         """
@@ -286,7 +312,6 @@ class MLP:
 
         for layer in range(1, n_layers + 1):
             W = self.parameters[f"W{layer}"]
-            # Regularize weights, not biases
             penalty += np.sum(W ** 2)
 
         return (self.l2_lambda / (2 * n_samples)) * penalty
@@ -305,7 +330,6 @@ class MLP:
         n_layers = len(self.hidden_nodes) + 1
 
         for layer in range(1, n_layers + 1):
-            # Add derivative of L2 penalty
             gradients[f"dW{layer}"] += (self.l2_lambda / n_samples) * self.parameters[f"W{layer}"]
 
         return gradients
@@ -448,7 +472,6 @@ class MLP:
                 self.adam_m[gradient_key] = self.beta1 * self.adam_m[gradient_key] + (1 - self.beta1) * gradients[gradient_key]
                 self.adam_v[gradient_key] = self.beta2 * self.adam_v[gradient_key] + (1 - self.beta2) * (gradients[gradient_key] ** 2)
 
-                # Correct Adam bias
                 m_corrected = self.adam_m[gradient_key] / (1 - self.beta1 ** self.adam_t)
                 v_corrected = self.adam_v[gradient_key] / (1 - self.beta2 ** self.adam_t)
 
@@ -489,6 +512,25 @@ class MLP:
 
         return loss
     
+    def _compute_batch_loss_and_gradients(self, X_batch, y_batch):
+        """
+        Computes loss and gradients for a batch without updating parameters.
+
+        Arguments:
+            X_batch (np.ndarray): Batch input data.
+            y_batch (np.ndarray): Batch labels.
+
+        Returns:
+            batch_loss (float): Loss computed on the batch.
+            gradients (dict): Gradients computed on the batch.
+        """
+        y_proba, pre_activations, activations = self.foward_pass(X_batch)
+
+        batch_loss = self._compute_loss(y_batch, y_proba)
+        gradients = self.backward_pass(X_batch, y_batch, pre_activations, activations)
+
+        return batch_loss, gradients
+    
     def _train_batch(self, X_batch, y_batch, learning_rate):
         """
         Trains the model on one batch.
@@ -501,10 +543,7 @@ class MLP:
         Returns:
             batch_loss (float): Loss computed on the batch before updating parameters.
         """
-        y_proba, pre_activations, activations = self.foward_pass(X_batch)
-
-        batch_loss = self._compute_loss(y_batch, y_proba)
-        gradients = self.backward_pass(X_batch, y_batch, pre_activations, activations)
+        batch_loss, gradients = self._compute_batch_loss_and_gradients(X_batch, y_batch)
 
         if self.l2_lambda > 0:
             gradients = self._add_l2_gradients(gradients, len(y_batch))
@@ -512,6 +551,54 @@ class MLP:
         self._update_parameters(gradients, learning_rate)
 
         return batch_loss
+    
+    def _train_full_batch_chunked(self, X, y, learning_rate):
+        """
+        Performs one full-batch update while processing data in chunks.
+
+        The gradients from all chunks are accumulated into the exact
+        full-dataset average before a single parameter update is applied.
+
+        Arguments:
+            X (np.ndarray): Training data.
+            y (np.ndarray): Training labels.
+            learning_rate (float): Learning rate used for the update.
+
+        Returns:
+            train_loss (float): Average training loss for the epoch.
+            n_updates (int): Number of parameter updates.
+            n_batches (int): Number of full batches.
+            n_chunks (int): Number of chunks used to build the full batch.
+        """
+        n_samples = X.shape[0]
+        chunk_size = self._resolve_chunk_size(n_samples, self.full_batch_chunk_size)
+        train_loss = 0.0
+        accumulated_gradients = None
+        n_chunks = 0
+
+        for X_chunk, y_chunk in self._iter_chunks(X, y, chunk_size):
+            chunk_loss, chunk_gradients = self._compute_batch_loss_and_gradients(X_chunk, y_chunk)
+            chunk_weight = len(y_chunk) / n_samples
+            train_loss += chunk_loss * chunk_weight
+
+            if accumulated_gradients is None:
+                accumulated_gradients = {
+                    key: value * chunk_weight
+                    for key, value in chunk_gradients.items()
+                }
+            else:
+                for key, value in chunk_gradients.items():
+                    accumulated_gradients[key] += value * chunk_weight
+
+            n_chunks += 1
+
+        if self.l2_lambda > 0:
+            accumulated_gradients = self._add_l2_gradients(accumulated_gradients, n_samples)
+            train_loss += self._l2_penalty(n_samples)
+
+        self._update_parameters(accumulated_gradients, learning_rate)
+
+        return train_loss, 1, 1, n_chunks
     
     def _train_epoch(self, X, y, batch_size, learning_rate):
         """
@@ -527,23 +614,25 @@ class MLP:
             train_loss (float): Average training loss for the epoch.
             n_updates (int): Number of parameter updates performed during the epoch.
             n_batches (int): Number of batches used during the epoch.
+            n_chunks (int): Number of chunks used during the epoch.
         """
-        batches = self._create_batches(X, y, batch_size = batch_size, shuffle = True)
+        if batch_size is None:
+            return self._train_full_batch_chunked(X, y, learning_rate)
+
         train_loss = 0.0
         n_updates = 0
+        n_batches = 0
 
-        for X_batch, y_batch in batches:
+        for X_batch, y_batch in self._iter_batches(X, y, batch_size = batch_size, shuffle = True):
             batch_loss = self._train_batch(X_batch, y_batch, learning_rate)
-            # Weighted average for uneven last batch
             train_loss += batch_loss * len(y_batch) / X.shape[0]
             n_updates += 1
+            n_batches += 1
 
         if self.l2_lambda > 0:
             train_loss += self._l2_penalty(X.shape[0])
 
-        n_batches = len(batches)
-
-        return train_loss, n_updates, n_batches
+        return train_loss, n_updates, n_batches, n_batches
     
     def _validate(self, X_val, y_val):
         """
@@ -556,8 +645,14 @@ class MLP:
         Returns:
             val_loss (float): Validation loss.
         """
-        y_val_proba, _, _ = self.foward_pass(X_val)
-        val_loss = self._compute_loss(y_val, y_val_proba)
+        n_samples = X_val.shape[0]
+        chunk_size = self._resolve_chunk_size(n_samples, self.full_batch_chunk_size)
+        val_loss = 0.0
+
+        for X_chunk, y_chunk in self._iter_chunks(X_val, y_val, chunk_size):
+            y_val_proba, _, _ = self.foward_pass(X_chunk)
+            chunk_loss = self._compute_loss(y_chunk, y_val_proba)
+            val_loss += chunk_loss * len(y_chunk) / n_samples
 
         if self.l2_lambda > 0:
             val_loss += self._l2_penalty(len(y_val))
@@ -603,7 +698,7 @@ class MLP:
 
         return should_stop, best_val_loss, epochs_without_improvement, improved
     
-    def fit(self, X, y, X_val = None, y_val = None, epochs = 70, batch_size = None, verbose = True):
+    def fit(self, X, y, X_val = None, y_val = None, epochs = 10, batch_size = None, verbose = True):
         """
         Trains the neural network using backpropagation.
 
@@ -626,7 +721,9 @@ class MLP:
             "epochs_trained": 0,
             "updates": 0,
             "batches_per_epoch": [],
+            "chunks_per_epoch": [],
             "epoch_time": [],
+            "avg_epoch_time": 0.0,
             "training_time": 0.0,
             "stopped_early": False
         }
@@ -639,9 +736,9 @@ class MLP:
         for epoch in range(epochs):
             epoch_start_time = time.perf_counter()
 
-            # Compute learning rate for current epoch
+            # Compute learning rate for currente epoch
             learning_rate = self._get_learning_rate(epoch, epochs)
-            train_loss, n_updates, n_batches = self._train_epoch(X, y, batch_size, learning_rate)
+            train_loss, n_updates, n_batches, n_chunks = self._train_epoch(X, y, batch_size, learning_rate)
 
             # Update history
             history["train_loss"].append(train_loss)
@@ -649,6 +746,7 @@ class MLP:
             history["epochs_trained"] = epoch + 1
             history["updates"] += n_updates
             history["batches_per_epoch"].append(n_batches)
+            history["chunks_per_epoch"].append(n_chunks)
 
             # Validate on validation set if provided
             if X_val is not None and y_val is not None:
@@ -666,12 +764,12 @@ class MLP:
 
                     if should_stop:
                         if best_parameters is not None:
-                            # Restore best validation weights
                             self.parameters = best_parameters
 
                         epoch_end_time = time.perf_counter()
                         history["epoch_time"].append(epoch_end_time - epoch_start_time)
                         history["training_time"] = epoch_end_time - start_time
+                        history["avg_epoch_time"] = float(np.mean(history["epoch_time"]))
                         history["stopped_early"] = True
 
                         if verbose:
@@ -682,12 +780,13 @@ class MLP:
             epoch_end_time = time.perf_counter()
             history["epoch_time"].append(epoch_end_time - epoch_start_time)
             history["training_time"] = epoch_end_time - start_time
+            history["avg_epoch_time"] = float(np.mean(history["epoch_time"]))
 
             if verbose:
                 if X_val is not None and y_val is not None:
-                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - val loss: {val_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s")
+                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - val loss: {val_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s - avg: {history['avg_epoch_time']:.2f}s - batches: {n_batches} - chunks: {n_chunks}")
                 else:
-                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s")
+                    print(f"Epoch {epoch + 1}/{epochs} - lr: {learning_rate:.6f} - train loss: {train_loss:.4f} - time: {history['epoch_time'][-1]:.2f}s - avg: {history['avg_epoch_time']:.2f}s - batches: {n_batches} - chunks: {n_chunks}")
 
         return history
     
@@ -701,9 +800,21 @@ class MLP:
         Returns:
             y_proba (np.ndarray): Predicted class probabilities.
         """
-        y_proba, _, _ = self.foward_pass(X)
+        n_samples = X.shape[0]
+        chunk_size = self._resolve_chunk_size(n_samples, self.full_batch_chunk_size)
 
-        return y_proba
+        if chunk_size == n_samples:
+            y_proba, _, _ = self.foward_pass(X)
+            return y_proba
+
+        y_proba_chunks = []
+
+        for start in range(0, n_samples, chunk_size):
+            end = min(start + chunk_size, n_samples)
+            y_proba_chunk, _, _ = self.foward_pass(X[start:end])
+            y_proba_chunks.append(y_proba_chunk)
+
+        return np.vstack(y_proba_chunks)
     
     def predict(self, X):
         """
